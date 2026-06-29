@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  sentinel-eye:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinel-eye
+    restart: unless-stopped
+    ports:
+      - "514:514/udp"
+      - "5140:5140"
+      - "8000:8000"
+    volumes:
+      - sentinel_data:/opt/sentinel/data
+      - sentinel_rules:/opt/sentinel/rules
+      - sentinel_logs:/opt/sentinel/logs
+      - ./examples/rules:/opt/sentinel/examples/rules:ro
+    environment:
+      - SENTINEL_MODE=all
+      - SENTINEL_HOST=0.0.0.0
+      - SENTINEL_PORT=8000
+      - SENTINEL_DB_URL=sqlite:////opt/sentinel/data/sentinel.db
+      - SENTINEL_RULES_DIR=/opt/sentinel/examples/rules
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - sentinel-net
+
+networks:
+  sentinel-net:
+    driver: bridge
+
+volumes:
+  sentinel_data:
+  sentinel_rules:
+  sentinel_logs:

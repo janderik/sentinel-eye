@@ -1,0 +1,217 @@
+# SentinelEye Example Rules
+# Format: Sigma-compatible detection rules
+
+---
+title: SSH Brute Force Detection
+id: rule-ssh-brute-force
+description: Detects multiple failed SSH authentication attempts from the same source IP
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.initial_access
+  - attack.t1110
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    Image|endswith: "/sshd"
+    CommandLine|contains: "Failed password"
+  condition: selection
+level: high
+falsepositives:
+  - Legitimate password mistakes
+  - Automated monitoring scripts
+references:
+  - https://attack.mitre.org/techniques/T1110/
+
+---
+title: Malicious PowerShell Execution
+id: rule-malicious-powershell
+description: Detects potentially malicious PowerShell execution patterns
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.execution
+  - attack.t1059.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    Image|endswith: "\\powershell.exe"
+    CommandLine|contains:
+      - "-enc"
+      - "-EncodedCommand"
+      - "IEX"
+      - "Invoke-Expression"
+      - "DownloadString"
+      - "Hidden"
+  condition: selection
+level: high
+falsepositives:
+  - Administrative scripts
+  - Legitimate software deployment
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+
+---
+title: Suspicious Service Installation
+id: rule-suspicious-service
+description: Detects installation of suspicious Windows services (potential persistence)
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.persistence
+  - attack.t1543.003
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    EventID: 7045
+    ImagePath|contains:
+      - "\\Users\\Public\\"
+      - "\\Temp\\"
+      - "\\AppData\\"
+    ServiceType: "user_mode_service"
+  condition: selection
+level: medium
+falsepositives:
+  - Legitimate software installations in non-standard paths
+references:
+  - https://attack.mitre.org/techniques/T1543/003/
+
+---
+title: Port Scan Detection
+id: rule-port-scan
+description: Detects potential port scanning activity from a single source
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.discovery
+  - attack.t1046
+logsource:
+  category: network_connection
+  product: windows
+detection:
+  selection:
+    EventID: 5156
+  condition: selection
+level: medium
+falsepositives:
+  - Network monitoring tools
+  - Vulnerability scanners (authorized)
+references:
+  - https://attack.mitre.org/techniques/T1046/
+
+---
+title: Malware Beaconing Detection
+id: rule-beaconing
+description: Detects periodic outbound connections characteristic of C2 beaconing
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.command_and_control
+  - attack.t1071.001
+logsource:
+  category: network_connection
+  product: windows
+detection:
+  selection:
+    EventID: 5156
+    DestinationPort:
+      - 80
+      - 443
+      - 8080
+      - 8443
+    Initiated: "true"
+  condition: selection
+level: high
+falsepositives:
+  - Regular software updates
+  - Web browsing activity
+  - Cloud service synchronization
+references:
+  - https://attack.mitre.org/techniques/T1071/001/
+
+---
+title: Local Account Enumeration
+id: rule-account-enum
+description: Detects enumeration of local accounts via net user or similar commands
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.discovery
+  - attack.t1087.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    Image|endswith: "\\net.exe"
+    CommandLine|contains:
+      - "user"
+      - "group"
+      - "localgroup"
+  condition: selection
+level: medium
+falsepositives:
+  - Administrative tasks
+  - IT support scripts
+references:
+  - https://attack.mitre.org/techniques/T1087/001/
+
+---
+title: Suspicious Windows Event Log Clearing
+id: rule-log-clearing
+description: Detects attempts to clear Windows event logs (potential evidence removal)
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    EventID: 1102
+    EventLog: "Security"
+  condition: selection
+level: high
+falsepositives:
+  - System administrators following procedures
+references:
+  - https://attack.mitre.org/techniques/T1070/001/
+
+---
+title: Unauthorized Privilege Escalation via UAC Bypass
+id: rule-uac-bypass
+description: Detects potential UAC bypass techniques
+status: experimental
+author: SentinelEye
+date: 2026/06/29
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.002
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    Image|endswith: "\\eventvwr.exe"
+    ParentImage|endswith: "\\cmd.exe"
+  condition: selection
+level: high
+falsepositives:
+  - Administrative troubleshooting
+references:
+  - https://attack.mitre.org/techniques/T1548/002/
