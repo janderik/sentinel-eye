@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from src.collector.base import BaseCollector, CollectEvent
 
@@ -32,7 +31,7 @@ FACILITY_MAP = {
 }
 
 
-def parse_rfc3164(message: str) -> Optional[dict]:
+def parse_rfc3164(message: str) -> dict | None:
     match = RFC3164_PATTERN.match(message.strip())
     if not match:
         return None
@@ -47,10 +46,13 @@ def parse_rfc3164(message: str) -> Optional[dict]:
     content = match.group("content")
 
     try:
-        parsed_ts = datetime.strptime(raw_ts, "%b %d %H:%M:%S")
-        parsed_ts = parsed_ts.replace(year=datetime.now(timezone.utc).year, tzinfo=timezone.utc)
+        # RFC 3164 timestamps carry no year: parse with the current one so
+        # Feb 29 works and Python 3.15+ does not reject the format.
+        year = datetime.now(UTC).year
+        parsed_ts = datetime.strptime(f"{year} {raw_ts}", "%Y %b %d %H:%M:%S")
+        parsed_ts = parsed_ts.replace(tzinfo=UTC)
     except ValueError:
-        parsed_ts = datetime.now(timezone.utc)
+        parsed_ts = datetime.now(UTC)
 
     return {
         "priority": pri,
@@ -66,15 +68,14 @@ def parse_rfc3164(message: str) -> Optional[dict]:
 
 
 class SyslogCollector(BaseCollector):
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: dict | None = None):
         super().__init__("syslog", config)
         self.udp_host = self.config.get("udp_host", "0.0.0.0")
         self.udp_port = self.config.get("udp_port", 514)
         self.tcp_host = self.config.get("tcp_host", "0.0.0.0")
         self.tcp_port = self.config.get("tcp_port", 5140)
-        self._udp_server: Optional[asyncio.DatagramServer] = None
-        self._tcp_server: Optional[asyncio.AbstractServer] = None
-        self._queue: asyncio.Queue = asyncio.Queue()
+        self._udp_server: asyncio.DatagramTransport | None = None
+        self._tcp_server: asyncio.AbstractServer | None = None
 
     async def start(self):
         self._running = True
@@ -99,7 +100,6 @@ class SyslogCollector(BaseCollector):
         except OSError as e:
             logger.warning(f"Could not start TCP syslog listener: {e}")
 
-        asyncio.create_task(self._process_queue())
 
     async def stop(self):
         self._running = False
@@ -109,10 +109,10 @@ class SyslogCollector(BaseCollector):
             self._tcp_server.close()
         logger.info("Syslog collector stopped")
 
-    async def collect(self) -> Optional[CollectEvent]:
+    async def collect(self) -> CollectEvent | None:
         try:
             return await asyncio.wait_for(self._queue.get(), timeout=1.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
 
     async def _handle_tcp_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -151,18 +151,8 @@ class SyslogCollector(BaseCollector):
                 data=parsed,
                 host=parsed.get("hostname", addr),
             )
-            await self._queue.put(event)
-            self.on_event(event)
-
-    async def _process_queue(self):
-        while self._running:
-            try:
-                event = await asyncio.wait_for(self._queue.get(), timeout=0.1)
-                self.on_event(event)
-            except asyncio.TimeoutError:
-                continue
-            except Exception:
-                logger.exception("Error in queue processor")
+            self._enqueue(event)
+            await self.emit(event)
 
 
 class SyslogUDPProtocol(asyncio.DatagramProtocol):

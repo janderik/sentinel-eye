@@ -1,4 +1,3 @@
-import pytest
 
 from src.collector.base import CollectEvent
 from src.engine.alert import Alert, AlertManager, Severity

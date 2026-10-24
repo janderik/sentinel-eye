@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from src.collector.base import CollectEvent
 from src.engine.alert import Alert, AlertManager, Severity
@@ -19,8 +19,8 @@ class CorrelationRule:
         event_type: str,
         min_events: int,
         time_window_seconds: int,
-        group_by: Optional[list[str]] = None,
-        filter_condition: Optional[dict] = None,
+        group_by: list[str] | None = None,
+        filter_condition: dict | None = None,
     ):
         self.rule_id = rule_id
         self.name = name
@@ -77,7 +77,7 @@ class CorrelationRule:
 
 
 class CorrelationEngine:
-    def __init__(self, alert_manager: Optional[AlertManager] = None):
+    def __init__(self, alert_manager: AlertManager | None = None):
         self.rules: list[CorrelationRule] = []
         self.alert_manager = alert_manager or AlertManager()
         self._windows: dict[str, list[tuple[datetime, CollectEvent]]] = defaultdict(list)
@@ -93,7 +93,7 @@ class CorrelationEngine:
     def add_hook(self, hook):
         self._alert_hooks.append(hook)
 
-    def process_event(self, event: CollectEvent) -> Optional[Alert]:
+    def process_event(self, event: CollectEvent) -> Alert | None:
         for rule in self.rules:
             if not rule.enabled:
                 continue
@@ -102,7 +102,7 @@ class CorrelationEngine:
 
             group_key = rule.get_group_key(event)
             window_key = f"{rule.rule_id}:{group_key}"
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             cutoff = now - timedelta(seconds=rule.time_window_seconds)
 
             self._windows[window_key] = [
@@ -152,7 +152,7 @@ class CorrelationEngine:
         return None
 
     def cleanup(self, max_age_seconds: int = 3600):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - timedelta(seconds=max_age_seconds)
         expired = [key for key, events in self._windows.items()
                    if all(ts < cutoff for ts, _ in events)]

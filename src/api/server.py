@@ -1,6 +1,7 @@
 import logging
 import time
-from typing import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,16 +26,27 @@ async def request_logging_middleware(request: Request, call_next: Callable):
 async def error_handler_middleware(request: Request, call_next: Callable):
     try:
         return await call_next(request)
-    except Exception as exc:
+    except Exception:
+        # Log the details server-side only; never leak internals to the client.
         logger.exception(f"Unhandled exception for {request.method} {request.url.path}")
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal server error", "error": str(exc)},
+            content={"detail": "Internal server error"},
         )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    from src.storage.database import get_db
+
+    get_db().create_tables()
+    logger.info("SentinelEye API started")
+    yield
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
+        lifespan=lifespan,
         title="SentinelEye API",
         description="Security Information and Event Management System - REST API",
         version="0.1.0",
@@ -54,11 +66,5 @@ def create_app() -> FastAPI:
     app.middleware("http")(error_handler_middleware)
 
     app.include_router(router, prefix="/api/v1")
-
-    @app.on_event("startup")
-    async def startup():
-        from src.storage.database import get_db
-        get_db().create_tables()
-        logger.info("SentinelEye API started")
 
     return app

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,20 +27,20 @@ class Severity(str, Enum):
         }[self]
 
     @classmethod
-    def from_level(cls, level: int) -> "Severity":
+    def from_level(cls, level: int) -> Severity:
         mapping = {0: cls.INFO, 1: cls.LOW, 2: cls.MEDIUM, 3: cls.HIGH, 4: cls.CRITICAL}
         return mapping.get(level, cls.INFO)
 
-    def __ge__(self, other: "Severity") -> bool:
+    def __ge__(self, other: Severity) -> bool:  # type: ignore[override]
         return self.level >= other.level
 
-    def __gt__(self, other: "Severity") -> bool:
+    def __gt__(self, other: Severity) -> bool:  # type: ignore[override]
         return self.level > other.level
 
-    def __le__(self, other: "Severity") -> bool:
+    def __le__(self, other: Severity) -> bool:  # type: ignore[override]
         return self.level <= other.level
 
-    def __lt__(self, other: "Severity") -> bool:
+    def __lt__(self, other: Severity) -> bool:  # type: ignore[override]
         return self.level < other.level
 
 
@@ -60,10 +59,10 @@ class Alert:
         severity: Severity,
         title: str,
         description: str,
-        source_events: Optional[list[Any]] = None,
-        event_ids: Optional[list[int]] = None,
+        source_events: list[Any] | None = None,
+        event_ids: list[int] | None = None,
         host: str = "unknown",
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ):
         self.rule_name = rule_name
         self.rule_id = rule_id
@@ -74,9 +73,9 @@ class Alert:
         self.event_ids = event_ids or []
         self.host = host
         self.metadata = metadata or {}
-        self.timestamp = datetime.now(timezone.utc)
+        self.timestamp = datetime.now(UTC)
         self.status = AlertStatus.NEW
-        self.id: Optional[int] = None
+        self.id: int | None = None
         self.dedup_key = self._compute_dedup_key()
 
     def _compute_dedup_key(self) -> str:
@@ -113,11 +112,11 @@ class AlertManager:
         last_seen = self._dedup_cache.get(alert.dedup_key)
         if last_seen is None:
             return False
-        elapsed = (datetime.now(timezone.utc) - last_seen).total_seconds()
+        elapsed = (datetime.now(UTC) - last_seen).total_seconds()
         return elapsed < self.dedup_window_seconds
 
     def mark_seen(self, alert: Alert):
-        self._dedup_cache[alert.dedup_key] = datetime.now(timezone.utc)
+        self._dedup_cache[alert.dedup_key] = datetime.now(UTC)
 
     def create_alert(
         self,
@@ -126,11 +125,11 @@ class AlertManager:
         severity: Severity,
         title: str,
         description: str,
-        source_events: Optional[list[Any]] = None,
-        event_ids: Optional[list[int]] = None,
+        source_events: list[Any] | None = None,
+        event_ids: list[int] | None = None,
         host: str = "unknown",
-        metadata: Optional[dict] = None,
-    ) -> Optional[Alert]:
+        metadata: dict | None = None,
+    ) -> Alert | None:
         alert = Alert(
             rule_name=rule_name,
             rule_id=rule_id,
@@ -151,7 +150,7 @@ class AlertManager:
         return alert
 
     def cleanup_cache(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired = [
             key
             for key, ts in self._dedup_cache.items()

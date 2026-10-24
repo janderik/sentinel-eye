@@ -3,35 +3,54 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timezone
-from typing import Any, Generator, Optional
+from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine
-from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
+from sqlalchemy import DateTime, Integer, String, Text, create_engine
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    scoped_session,
+    sessionmaker,
+)
 
 logger = logging.getLogger(__name__)
 
-Base = declarative_base()
+DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sentinel.db")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _loads(value: str | None, default: Any) -> Any:
+    return json.loads(value) if value else default
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class EventModel(Base):
     __tablename__ = "events"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    source = Column(String(255), nullable=False, index=True)
-    event_type = Column(String(255), nullable=False, index=True)
-    data = Column(Text, nullable=False, default="{}")
-    host = Column(String(255), nullable=False, default="localhost", index=True)
-    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(255), index=True)
+    event_type: Mapped[str] = mapped_column(String(255), index=True)
+    data: Mapped[str] = mapped_column(Text, default="{}")
+    host: Mapped[str] = mapped_column(String(255), default="localhost", index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "source": self.source,
             "event_type": self.event_type,
-            "data": json.loads(self.data) if isinstance(self.data, str) else self.data,
+            "data": _loads(self.data, {}),
             "host": self.host,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -41,20 +60,21 @@ class EventModel(Base):
 class AlertModel(Base):
     __tablename__ = "alerts"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    rule_name = Column(String(255), nullable=False, index=True)
-    rule_id = Column(String(255), nullable=False, index=True)
-    severity = Column(String(20), nullable=False, default="medium", index=True)
-    title = Column(String(512), nullable=False)
-    description = Column(Text, nullable=True)
-    source_events = Column(Text, nullable=True, default="[]")
-    event_ids = Column(Text, nullable=True, default="[]")
-    host = Column(String(255), nullable=False, default="unknown", index=True)
-    metadata = Column(Text, nullable=True, default="{}")
-    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
-    status = Column(String(20), nullable=False, default="new", index=True)
-    dedup_key = Column(String(64), nullable=True, index=True)
-    resolved_at = Column(DateTime, nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_name: Mapped[str] = mapped_column(String(255), index=True)
+    rule_id: Mapped[str] = mapped_column(String(255), index=True)
+    severity: Mapped[str] = mapped_column(String(20), default="medium", index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    description: Mapped[str | None] = mapped_column(Text)
+    source_events: Mapped[str | None] = mapped_column(Text, default="[]")
+    event_ids: Mapped[str | None] = mapped_column(Text, default="[]")
+    host: Mapped[str] = mapped_column(String(255), default="unknown", index=True)
+    # "metadata" is reserved by SQLAlchemy's declarative API; keep the DB column name.
+    meta: Mapped[str | None] = mapped_column("metadata", Text, default="{}")
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="new", index=True)
+    dedup_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     def to_dict(self) -> dict:
         return {
@@ -64,10 +84,10 @@ class AlertModel(Base):
             "severity": self.severity,
             "title": self.title,
             "description": self.description,
-            "source_events": json.loads(self.source_events) if isinstance(self.source_events, str) else self.source_events,
-            "event_ids": json.loads(self.event_ids) if isinstance(self.event_ids, str) else self.event_ids,
+            "source_events": _loads(self.source_events, []),
+            "event_ids": _loads(self.event_ids, []),
             "host": self.host,
-            "metadata": json.loads(self.metadata) if isinstance(self.metadata, str) else self.metadata,
+            "metadata": _loads(self.meta, {}),
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "status": self.status,
             "dedup_key": self.dedup_key,
@@ -78,17 +98,18 @@ class AlertModel(Base):
 class RuleModel(Base):
     __tablename__ = "rules"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    rule_id = Column(String(255), unique=True, nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    severity = Column(String(20), nullable=False, default="medium")
-    source = Column(String(255), nullable=False, default="*")
-    event_type = Column(String(255), nullable=False, default="*")
-    conditions = Column(Text, nullable=False, default="[]")
-    metadata = Column(Text, nullable=True, default="{}")
-    enabled = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(String(20), default="medium")
+    source: Mapped[str] = mapped_column(String(255), default="*")
+    event_type: Mapped[str] = mapped_column(String(255), default="*")
+    conditions: Mapped[str] = mapped_column(Text, default="[]")
+    # "metadata" is reserved by SQLAlchemy's declarative API; keep the DB column name.
+    meta: Mapped[str | None] = mapped_column("metadata", Text, default="{}")
+    enabled: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
         return {
@@ -99,23 +120,23 @@ class RuleModel(Base):
             "severity": self.severity,
             "source": self.source,
             "event_type": self.event_type,
-            "conditions": json.loads(self.conditions) if isinstance(self.conditions, str) else self.conditions,
-            "metadata": json.loads(self.metadata) if isinstance(self.metadata, str) else self.metadata,
+            "conditions": _loads(self.conditions, []),
+            "metadata": _loads(self.meta, {}),
             "enabled": bool(self.enabled),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
 class DatabaseManager:
-    def __init__(self, db_url: Optional[str] = None):
-        self.db_url = db_url or os.getenv(
-            "SENTINEL_DB_URL",
-            f"sqlite:///{os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'sentinel.db')}",
-        )
+    def __init__(self, db_url: str | None = None):
+        self.db_url: str = db_url or os.getenv("SENTINEL_DB_URL") or f"sqlite:///{DEFAULT_DB_PATH}"
+        is_sqlite = self.db_url.startswith("sqlite")
+        if is_sqlite and self.db_url.startswith("sqlite:///") and ":memory:" not in self.db_url:
+            os.makedirs(os.path.dirname(os.path.abspath(self.db_url[len("sqlite:///"):])), exist_ok=True)
         self._engine = create_engine(
             self.db_url,
             echo=False,
-            connect_args={"check_same_thread": False} if "sqlite" in self.db_url else {},
+            connect_args={"check_same_thread": False} if is_sqlite else {},
         )
         self._session_factory = scoped_session(
             sessionmaker(autocommit=False, autoflush=False, bind=self._engine)
@@ -147,7 +168,7 @@ class DatabaseManager:
                 timestamp=(
                     datetime.fromisoformat(event_dict["timestamp"])
                     if isinstance(event_dict.get("timestamp"), str)
-                    else event_dict.get("timestamp", datetime.now(timezone.utc))
+                    else event_dict.get("timestamp", datetime.now(UTC))
                 ),
             )
             session.add(model)
@@ -166,11 +187,11 @@ class DatabaseManager:
                 source_events=json.dumps(alert_dict.get("source_events", []), default=str),
                 event_ids=json.dumps(alert_dict.get("event_ids", []), default=str),
                 host=alert_dict.get("host", "unknown"),
-                metadata=json.dumps(alert_dict.get("metadata", {}), default=str),
+                meta=json.dumps(alert_dict.get("metadata", {}), default=str),
                 timestamp=(
                     datetime.fromisoformat(alert_dict["timestamp"])
                     if isinstance(alert_dict.get("timestamp"), str)
-                    else alert_dict.get("timestamp", datetime.now(timezone.utc))
+                    else alert_dict.get("timestamp", datetime.now(UTC))
                 ),
                 status=alert_dict.get("status", "new"),
                 dedup_key=alert_dict.get("dedup_key"),
@@ -189,6 +210,7 @@ class DatabaseManager:
                     if key == "conditions":
                         value = json.dumps(value, default=str)
                     elif key == "metadata":
+                        key = "meta"
                         value = json.dumps(value, default=str)
                     elif key == "enabled":
                         value = 1 if value else 0
@@ -203,7 +225,7 @@ class DatabaseManager:
                 source=rule_dict.get("source", "*"),
                 event_type=rule_dict.get("event_type", "*"),
                 conditions=json.dumps(rule_dict.get("conditions", []), default=str),
-                metadata=json.dumps(rule_dict.get("metadata", {}), default=str),
+                meta=json.dumps(rule_dict.get("metadata", {}), default=str),
                 enabled=1 if rule_dict.get("enabled", True) else 0,
             )
             session.add(model)
@@ -212,9 +234,9 @@ class DatabaseManager:
 
     def query_events(
         self,
-        source: Optional[str] = None,
-        event_type: Optional[str] = None,
-        host: Optional[str] = None,
+        source: str | None = None,
+        event_type: str | None = None,
+        host: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -231,9 +253,9 @@ class DatabaseManager:
 
     def query_alerts(
         self,
-        severity: Optional[str] = None,
-        status: Optional[str] = None,
-        rule_id: Optional[str] = None,
+        severity: str | None = None,
+        status: str | None = None,
+        rule_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -248,12 +270,12 @@ class DatabaseManager:
             query = query.order_by(AlertModel.timestamp.desc()).limit(limit).offset(offset)
             return [m.to_dict() for m in query.all()]
 
-    def get_alert(self, alert_id: int) -> Optional[dict]:
+    def get_alert(self, alert_id: int) -> dict | None:
         with self.session() as session:
             model = session.query(AlertModel).filter_by(id=alert_id).first()
             return model.to_dict() if model else None
 
-    def get_event(self, event_id: int) -> Optional[dict]:
+    def get_event(self, event_id: int) -> dict | None:
         with self.session() as session:
             model = session.query(EventModel).filter_by(id=event_id).first()
             return model.to_dict() if model else None
@@ -265,7 +287,7 @@ class DatabaseManager:
                 return False
             model.status = status
             if status in ("resolved", "dismissed"):
-                model.resolved_at = datetime.now(timezone.utc)
+                model.resolved_at = datetime.now(UTC)
             return True
 
     def get_stats(self) -> dict:
@@ -287,7 +309,7 @@ class DatabaseManager:
             }
 
 
-_db_manager: Optional[DatabaseManager] = None
+_db_manager: DatabaseManager | None = None
 
 
 def get_db() -> DatabaseManager:
