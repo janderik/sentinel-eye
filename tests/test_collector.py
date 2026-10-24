@@ -1,5 +1,5 @@
 import asyncio
-import json
+
 import pytest
 
 from src.collector.base import CollectEvent

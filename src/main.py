@@ -10,7 +10,7 @@ import uvicorn
 
 from src.collector.syslog import SyslogCollector
 from src.collector.windows_event import WindowsEventCollector
-from src.engine.correlator import CorrelationEngine, CorrelationRule
+from src.engine.correlator import CorrelationEngine
 from src.engine.rules import RuleEngine
 from src.storage.database import get_db
 
@@ -27,7 +27,7 @@ def setup_logging(verbose: bool = False):
 
 
 class SentinelEye:
-    def __init__(self, rules_dir: Optional[str] = None, db_url: Optional[str] = None):
+    def __init__(self, rules_dir: str | None = None, db_url: str | None = None):
         self.rules_dir = rules_dir or os.getenv(
             "SENTINEL_RULES_DIR",
             str(Path(__file__).parent.parent / "examples" / "rules"),
@@ -116,7 +116,7 @@ def run_api(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     )
 
 
-async def run_agent(rules_dir: Optional[str] = None, db_url: Optional[str] = None):
+async def run_agent(rules_dir: str | None = None, db_url: str | None = None):
     sentinel = SentinelEye(rules_dir=rules_dir, db_url=db_url)
 
     def shutdown_handler():

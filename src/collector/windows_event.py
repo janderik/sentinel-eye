@@ -1,9 +1,9 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
+from typing import ClassVar
 
 from src.collector.base import BaseCollector, CollectEvent
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class WindowsEventCollector(BaseCollector):
-    SIMULATED_EVENTS = [
+    SIMULATED_EVENTS: ClassVar[list[dict]] = [
         {
             "EventId": 4625,
             "EventLog": "Security",
@@ -75,13 +75,12 @@ class WindowsEventCollector(BaseCollector):
         },
     ]
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: dict | None = None):
         super().__init__("windows_event", config)
         self.simulation_mode = self.config.get("simulation_mode", True)
         self.simulation_interval = self.config.get("simulation_interval", 5)
         self.simulation_file = self.config.get("simulation_file")
-        self._task: Optional[asyncio.Task] = None
-        self._queue: asyncio.Queue = asyncio.Queue()
+        self._task: asyncio.Task | None = None
 
     async def start(self):
         self._running = True
@@ -104,13 +103,13 @@ class WindowsEventCollector(BaseCollector):
                 pass
         logger.info("Windows Event collector stopped")
 
-    async def collect(self) -> Optional[CollectEvent]:
+    async def collect(self) -> CollectEvent | None:
         try:
             return await asyncio.wait_for(self._queue.get(), timeout=1.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
 
-    def ingest_event(self, raw_data: dict) -> Optional[CollectEvent]:
+    def ingest_event(self, raw_data: dict) -> CollectEvent | None:
         try:
             event_id = raw_data.get("EventId", raw_data.get("EventID", 0))
             event_log = raw_data.get("EventLog", raw_data.get("LogName", "Unknown"))
@@ -123,9 +122,9 @@ class WindowsEventCollector(BaseCollector):
                 try:
                     ts = datetime.fromisoformat(raw_ts)
                 except ValueError:
-                    ts = datetime.now(timezone.utc)
+                    ts = datetime.now(UTC)
             else:
-                ts = datetime.now(timezone.utc)
+                ts = datetime.now(UTC)
 
             event = CollectEvent(
                 source=f"windows/{event_log}",
@@ -152,7 +151,7 @@ class WindowsEventCollector(BaseCollector):
             while self._running:
                 template = self.SIMULATED_EVENTS[idx % len(self.SIMULATED_EVENTS)]
                 event_data = dict(template)
-                event_data["TimeCreated"] = datetime.now(timezone.utc).isoformat()
+                event_data["TimeCreated"] = datetime.now(UTC).isoformat()
 
                 event = CollectEvent(
                     source=f"windows/{event_data['EventLog']}",
@@ -160,8 +159,8 @@ class WindowsEventCollector(BaseCollector):
                     data=event_data,
                     host=event_data["Computer"],
                 )
-                await self._queue.put(event)
-                self.on_event(event)
+                self._enqueue(event)
+                await self.emit(event)
                 idx += 1
                 await asyncio.sleep(self.simulation_interval)
 

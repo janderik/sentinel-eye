@@ -20,3 +20,4 @@ httpx==0.28.1
 # Dev
 ruff==0.8.4
 mypy==1.13.0
+types-PyYAML==6.0.12.20240917

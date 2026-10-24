@@ -2,9 +2,9 @@ import fnmatch
 import hashlib
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -62,11 +62,12 @@ class RuleCondition:
             else:
                 logger.warning(f"Unknown operator: {self.operator}")
                 return False
-        except Exception:
+        except Exception:  # noqa: BLE001 - a malformed condition must not crash the engine
             return False
 
     def _resolve_field(self, event: CollectEvent) -> Any:
         parts = self.field.split(".")
+        obj: Any
         if parts[0] == "event":
             obj = event
             parts = parts[1:]
@@ -102,7 +103,7 @@ class Rule:
         source: str,
         event_type: str,
         conditions: list[RuleCondition],
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ):
         self.rule_id = rule_id
         self.name = name
@@ -113,7 +114,7 @@ class Rule:
         self.conditions = conditions
         self.metadata = metadata or {}
         self.enabled = self.metadata.get("enabled", True)
-        self.created = datetime.now(timezone.utc)
+        self.created = datetime.now(UTC)
 
     def matches(self, event: CollectEvent) -> bool:
         if not self.enabled:
@@ -156,7 +157,6 @@ class Rule:
 
         detection = sigma_rule.get("detection", {})
         conditions_list = []
-        selection_map = {}
         for key, value in detection.items():
             if key == "condition" or key == "timeframe":
                 continue
@@ -196,7 +196,7 @@ class Rule:
 
 
 class RuleEngine:
-    def __init__(self, rules_dir: Optional[str] = None):
+    def __init__(self, rules_dir: str | None = None):
         self.rules: list[Rule] = []
         self.alert_manager = AlertManager()
         self._alert_hooks: list = []
@@ -237,8 +237,8 @@ class RuleEngine:
                         self._load_rule_doc(doc, str(yaml_file))
             except yaml.YAMLError as e:
                 logger.error(f"Failed to parse rule file {yaml_file}: {e}")
-            except Exception as e:
-                logger.exception(f"Error loading rule file {yaml_file}: {e}")
+            except Exception:
+                logger.exception(f"Error loading rule file {yaml_file}")
 
     def _load_rule_doc(self, doc: dict, source: str):
         try:
@@ -276,7 +276,7 @@ class RuleEngine:
             metadata=doc.get("metadata", {}),
         )
 
-    def process_event(self, event: CollectEvent) -> Optional[Any]:
+    def process_event(self, event: CollectEvent) -> Any | None:
         for rule in self.rules:
             try:
                 if rule.matches(event):
@@ -304,7 +304,7 @@ class RuleEngine:
                             try:
                                 hook(alert)
                             except Exception:
-                                logger.exception(f"Alert hook failed")
+                                logger.exception("Alert hook failed")
                         return alert
             except Exception:
                 logger.exception(f"Error processing rule {rule.name} for event")

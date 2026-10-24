@@ -1,6 +1,6 @@
 # SentinelEye
 
-[![CI](https://github.com/sentinel-eye/sentinel-eye/actions/workflows/ci.yml/badge.svg)](https://github.com/sentinel-eye/sentinel-eye/actions/workflows/ci.yml)
+[![CI](https://github.com/janderik/sentinel-eye/actions/workflows/ci.yml/badge.svg)](https://github.com/janderik/sentinel-eye/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)](https://fastapi.tiangolo.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -80,7 +80,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/sentinel-eye/sentinel-eye.git
+git clone https://github.com/janderik/sentinel-eye.git
 cd sentinel-eye
 
 # Start with docker-compose
@@ -94,7 +94,7 @@ curl http://localhost:8000/api/v1/health
 
 ```bash
 # Clone and enter directory
-git clone https://github.com/sentinel-eye/sentinel-eye.git
+git clone https://github.com/janderik/sentinel-eye.git
 cd sentinel-eye
 
 # Create virtual environment
@@ -210,7 +210,7 @@ level: high
 ### Setup
 
 ```bash
-git clone https://github.com/sentinel-eye/sentinel-eye.git
+git clone https://github.com/janderik/sentinel-eye.git
 cd sentinel-eye
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt

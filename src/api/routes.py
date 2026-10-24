@@ -1,15 +1,15 @@
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from src.engine.rules import Rule, RuleEngine
+from src.engine.alert import Severity
+from src.engine.rules import Rule, RuleCondition, RuleEngine
 from src.storage.database import get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-_rule_engine: Optional[RuleEngine] = None
+_rule_engine: RuleEngine | None = None
 
 
 def get_rule_engine() -> RuleEngine:
@@ -30,9 +30,9 @@ async def health_check():
 
 @router.get("/events")
 async def list_events(
-    source: Optional[str] = Query(None, description="Filter by source"),
-    event_type: Optional[str] = Query(None, description="Filter by event type"),
-    host: Optional[str] = Query(None, description="Filter by host"),
+    source: str | None = Query(None, description="Filter by source"),
+    event_type: str | None = Query(None, description="Filter by event type"),
+    host: str | None = Query(None, description="Filter by host"),
     limit: int = Query(100, ge=1, le=1000, description="Number of results"),
     offset: int = Query(0, ge=0, description="Result offset"),
 ):
@@ -58,9 +58,9 @@ async def get_event(event_id: int):
 
 @router.get("/alerts")
 async def list_alerts(
-    severity: Optional[str] = Query(None, description="Filter by severity"),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    rule_id: Optional[str] = Query(None, description="Filter by rule ID"),
+    severity: str | None = Query(None, description="Filter by severity"),
+    status: str | None = Query(None, description="Filter by status"),
+    rule_id: str | None = Query(None, description="Filter by rule ID"),
     limit: int = Query(100, ge=1, le=1000, description="Number of results"),
     offset: int = Query(0, ge=0, description="Result offset"),
 ):
@@ -119,7 +119,7 @@ async def create_rule(rule_data: dict):
         for cond in rule_data["conditions"]:
             if not all(k in cond for k in ("field", "operator", "value")):
                 raise ValueError("Each condition must have 'field', 'operator', and 'value'")
-            conditions.append(Rule.Condition(
+            conditions.append(RuleCondition(
                 field=cond["field"],
                 operator=cond["operator"],
                 value=cond["value"],
@@ -128,7 +128,7 @@ async def create_rule(rule_data: dict):
             rule_id=rule_data.get("rule_id", f"custom-{len(get_rule_engine().rules) + 1}"),
             name=rule_data["name"],
             description=rule_data.get("description", ""),
-            severity=rule_data.get("severity", "medium"),
+            severity=Severity(rule_data.get("severity", "medium")),
             source=rule_data["source"],
             event_type=rule_data["event_type"],
             conditions=conditions,
@@ -142,7 +142,7 @@ async def create_rule(rule_data: dict):
 
         return {"status": "created", "rule": rule.to_dict()}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/stats")
